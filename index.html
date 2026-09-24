@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>낙서 서바이벌</title>
+<meta name="description" content="내가 그린 무기로 싸우는 3D 낙서 난투. 링크만 열면 자동으로 최대 6명이 모여요.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Nanum+Pen+Script&display=swap">
+<link rel="stylesheet" href="css/style.css?v=4">
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="pops"></div>
+
+<!-- 시작 화면 -->
+<section id="title">
+  <div class="title-card">
+    <p class="kicker">3D 낙서 난투 · 한 방에 최대 6명</p>
+    <h1>낙서<br>서바이벌</h1>
+    <p class="lead">내가 <mark>그린 모양</mark>대로 무기가 된다.<br>땅에는 <mark>벽·가시·회복 원</mark>을 긋고,<br>지우개가 공책을 지우기 전에 끝까지 살아남아라!</p>
+    <label class="field"><span>이름</span><input id="in-name" maxlength="8" placeholder="낙서" autocomplete="off"></label>
+    <div class="field"><span>색</span><div id="swatches"></div></div>
+    <div class="field"><span>무기</span><button id="btn-weapon" class="mini">✏️ <b id="title-weapon">검</b> 다시 그리기</button></div>
+    <div class="btns">
+      <button id="btn-play" class="big red">난투 입장</button>
+      <button id="btn-friend" class="big blue">친구랑 방 만들기</button>
+    </div>
+    <p id="room-note" class="note">링크만 열면 자동으로 빈자리가 있는 방에 들어가요.</p>
+    <details class="howto">
+      <summary>조작법과 규칙</summary>
+      <ul>
+        <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 · 마우스로 조준</li>
+        <li><kbd>클릭</kbd> 공격(누르고 있으면 연속) · <kbd>Space</kbd> 구르기</li>
+        <li><kbd>우클릭 끌기</kbd> 땅에 그리기: 곧은 선 = 벽, 지그재그 = 가시밭, 동그라미 = 회복 원</li>
+        <li><kbd>Q</kbd> 무기 다시 그리기(연습 중, 그리기 시간)</li>
+        <li>2명 이상 모이면: 무기 그리기 25초 → 난투 → 마지막 한 명이 우승</li>
+        <li>20초가 지나면 지우개가 가장자리부터 공책을 지워요. 지워진 곳에 있으면 아파요.</li>
+      </ul>
+    </details>
+  </div>
+</section>
+
+<!-- 게임 화면 -->
+<section id="hud" hidden>
+  <div id="me-panel">
+    <div class="bar hp"><i id="hp-fill"></i><span>체력 <b id="hp-n">100</b></span></div>
+    <div class="bar ink"><i id="ink-fill"></i><span>잉크</span></div>
+    <button id="wcard" title="무기 다시 그리기 (Q)"><canvas id="wcard-c" width="72" height="72"></canvas><div><b id="wcard-name">검</b><small id="wcard-desc"></small></div></button>
+  </div>
+  <div id="phase-box"><b id="phase">연습 중</b><span id="ptimer"></span><small id="phase-sub"></small></div>
+  <ul id="feed"></ul>
+  <div id="side">
+    <div id="room-label"></div>
+    <ol id="plist"></ol>
+    <div class="side-btns"><button id="btn-link" class="mini">링크 복사</button><button id="btn-mute" class="mini">소리 끄기</button><button id="btn-leave" class="mini">나가기</button></div>
+  </div>
+  <div id="banner" hidden><b></b><small></small></div>
+  <div id="dead" hidden><b>탈락!</b><small id="dead-by"></small><small id="dead-sub"></small></div>
+  <div id="hint">WASD 이동 · 클릭 공격 · Space 구르기 · <b>우클릭 끌기</b>로 땅에 그리기 · <b>Q</b> 무기 다시 그리기</div>
+  <div id="touch" hidden>
+    <div id="stick"><i></i></div>
+    <div class="t-btns">
+      <button id="t-sketch">무기</button>
+      <button id="t-draw">땅에<br>그리기</button>
+      <button id="t-dash">구르기</button>
+      <button id="t-atk">공격</button>
+    </div>
+  </div>
+</section>
+
+<!-- 스케치북 -->
+<section id="sketch" hidden>
+  <div class="book">
+    <header>
+      <h2>무기를 그려라</h2>
+      <p>빨간 <b>손잡이 점</b>에서부터 그려 보세요. 모양에 따라 무기가 바뀌어요.</p>
+      <div id="sk-timer" hidden></div>
+    </header>
+    <div class="book-body">
+      <div class="pad-wrap">
+        <canvas id="pad" width="480" height="480"></canvas>
+        <div class="pad-tools">
+          <div id="inks"></div>
+          <div class="pad-edit"><button id="sk-undo" class="mini">되돌리기</button><button id="sk-clear" class="mini">모두 지우기</button></div>
+        </div>
+      </div>
+      <div class="info">
+        <div class="now"><small>지금 그림은</small><b id="sk-type">검</b><p id="sk-desc"></p><p id="sk-traits"></p></div>
+        <div id="sk-bars"></div>
+        <div class="ink-meter"><span>잉크</span><i><b id="sk-ink"></b></i><em id="sk-ink-n"></em></div>
+        <div class="guide"><small>이렇게 그리면 · 누르면 예시</small><ul id="sk-guide"></ul></div>
+        <button id="sk-done" class="big red">이 무기로 결정!</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="js/util.js?v=4"></script>
+<script src="js/audio.js?v=4"></script>
+<script src="js/recognize.js?v=4"></script>
+<script src="js/scene.js?v=4"></script>
+<script src="js/rig.js?v=4"></script>
+<script src="js/net.js?v=4"></script>
+<script src="js/sketch.js?v=4"></script>
+<script src="js/game.js?v=4"></script>
+</body>
+</html>

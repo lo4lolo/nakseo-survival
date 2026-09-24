@@ -36,16 +36,20 @@
     pubT: 0, hb: 0, spec: null, listT: 0, sketchByPhase: false, gdraw: null, zoneWarned: false,
   };
   const P = {
-    x: 0, z: 0, vx: 0, vz: 0, kx: 0, kz: 0, face: 0, hp: 100, dead: false,
+    x: 0, z: 0, vx: 0, vz: 0, kx: 0, kz: 0, face: 0, hp: 100, maxHp: 100, dead: false,
     atk: null, atkSeq: 0, lastAtkEnd: -9, comboStep: -1, dashT: 0, dashCd: 0, dx: 0, dz: 1,
     inv: 0, slowT: 0, rootT: 0, burnT: 0, burnBy: null, lastHitBy: null, lastHitAt: -99, kb: null,
-    ink: INK_MAX, respawnAt: 0, structs: [], sid: 0, spikeCd: new Map(), healPopT: 0, flash: 0,
+    ink: INK_MAX, inkMax: INK_MAX, respawnAt: 0, structs: [], sid: 0, spikeCd: new Map(), healPopT: 0, flash: 0,
   };
   const ME = { w: null, kills: 0 };
   const remotes = new Map();
   const dummies = [];
   const scene = NS.scene;
   const myId = () => (G.net ? G.net.myId : 'me');
+  const inGame = () => G.mode === 'play' || G.mode === 'solo';
+  const solo = () => G.mode === 'solo' && !!NS.Solo;
+  // 혼자 모험에서 모은 스티커 효과 (난투에서는 늘 기본값)
+  const mod = (k, d) => (solo() ? NS.Solo.mod(k, d) : d);
 
   /* ---------- 내 몸과 무기 ---------- */
   const myRig = NS.makeRig(save.color);
@@ -146,11 +150,11 @@
   addEventListener('keydown', (e) => {
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
     keys[e.code] = true;
-    if (G.mode !== 'play') return;
+    if (!inGame()) return;
     if (e.code === 'Space') { e.preventDefault(); tryDash(); }
     if (e.code === 'KeyQ') openSketchManual();
     if (e.code === 'KeyM') toggleMute();
-    if (e.code === 'Escape' && NS.Sketch.isOpen()) NS.Sketch.close(true);
+    if (e.code === 'Escape') { if (NS.Sketch.isOpen()) NS.Sketch.close(true); else if (solo()) NS.Solo.togglePause(); }
     if ((e.code === 'Tab' || e.code === 'KeyE') && spectating()) { e.preventDefault(); cycleSpec(); }
   });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -160,7 +164,7 @@
   view.addEventListener('pointerdown', (e) => {
     Sfx.unlock();
     mouse.sx = e.clientX; mouse.sy = e.clientY;
-    if (G.mode !== 'play' || NS.Sketch.isOpen()) return;
+    if (!inGame() || NS.Sketch.isOpen()) return;
     if (e.pointerType === 'touch') {
       if (touch.drawMode) { view.setPointerCapture(e.pointerId); beginGroundDraw(); }
       else if (spectating()) cycleSpec();
@@ -221,7 +225,7 @@
   }
 
   /* ---------- 공격 ---------- */
-  function canAct() { return G.mode === 'play' && !P.dead && !G.watch && !NS.Sketch.isOpen(); }
+  function canAct() { return inGame() && !P.dead && !G.watch && !NS.Sketch.isOpen() && !(solo() && NS.Solo.frozen()); }
   function pvpOn() { return G.phase.ph === 'fight' && G.myRn === G.phase.rn && G.myRn > 0; }
 
   function tryAttack() {
@@ -231,7 +235,7 @@
     if (st.type === 'blade') step = G.time - P.lastAtkEnd < 0.45 ? (P.comboStep + 1) % 3 : 0;
     else if (st.type === 'whip') step = G.time - P.lastAtkEnd < 0.6 ? (P.comboStep + 1) % 2 : 0;
     P.atkSeq = (P.atkSeq + 1) % 100000;
-    P.atk = { seq: P.atkSeq, step, t: 0, dur: NS.atkDur(st, step), type: st.type, hit: new Set(), impacted: false, swung: false };
+    P.atk = { seq: P.atkSeq, step, t: 0, dur: NS.atkDur(st, step) / mod('atkSpd', 1), type: st.type, hit: new Set(), impacted: false, swung: false };
   }
 
   function tryDash() {
@@ -246,7 +250,7 @@
     if (L < 0.2) { dx = Math.sin(P.face); dz = Math.cos(P.face); L = 1; }
     P.dx = dx / L; P.dz = dz / L;
     P.dashT = 0.17;
-    P.dashCd = 0.85;
+    P.dashCd = 0.85 * mod('dashCd', 1);
     P.inv = Math.max(P.inv, 0.2);
     Sfx.dash();
     NS.fx.burst(P.x, 0.3, P.z, { color: ['#ffffff', '#d9d4c7'], n: 8, speed: 3, up: 2, size: 0.12 });
@@ -284,6 +288,11 @@
     NS.setPose(rig, p1);
   }
 
+  // 내 공격이 닿을 수 있는 것: 허수아비, (혼자 모험) 적·보스·날아오는 물감
+  function targets() { return solo() ? dummies.concat(NS.Solo.targets()) : dummies; }
+  function hitTarget(t, h, q, from) { if (t.hurt) t.hurt(h, q, from || { x: P.x, z: P.z }); else hitDummy(t, h, q, from); }
+  function myHit(kind, step, tip) { const h = calcHit(ME.w.stats, kind, step, tip); return solo() ? NS.Solo.modHit(h) : h; }
+
   function updateMyAttack(dt) {
     const a = P.atk, st = ME.w.stats;
     const k0 = a.t / a.dur;
@@ -293,10 +302,10 @@
     if (p.active && !a.swung) { a.swung = true; Sfx.swing(st.mass); }
     if (p.active || NS.pose(st.type, a.step, k0).active) {
       sweep(myRig, st.type, a.step, k0, k, (pts) => {
-        for (const d of dummies) {
+        for (const d of targets()) {
           if (d.dead || a.hit.has(d)) continue;
-          const q = touching(pts, d.x, d.z, BODY_R + 0.15);
-          if (q) { a.hit.add(d); hitDummy(d, calcHit(st, 'swing', a.step, q.tip), q); }
+          const q = touching(pts, d.x, d.z, (d.r || BODY_R) + 0.15);
+          if (q) { a.hit.add(d); hitTarget(d, myHit('swing', a.step, q.tip), q); }
         }
         if (!pvpOn()) return;
         for (const R of remotes.values()) {
@@ -308,9 +317,9 @@
     } else NS.setPose(myRig, p);
     if (st.type === 'hammer' && !a.impacted && k >= NS.HAMMER_IMPACT) {
       a.impacted = true;
-      const c = NS.hammerCenter(P.x, P.z, P.face, st), R = NS.slamRadius(st);
+      const sz = mod('size', 1), c = NS.hammerCenter(P.x, P.z, P.face, { reach: st.reach * sz }), R = NS.slamRadius(st) * sz;
       slamFx(c, R, st);
-      for (const d of dummies) if (!d.dead && Math.hypot(d.x - c.x, d.z - c.z) < R + BODY_R) hitDummy(d, calcHit(st, 'slam', 0, 1), { x: d.x, y: 1, z: d.z }, c);
+      for (const d of targets()) if (!d.dead && Math.hypot(d.x - c.x, d.z - c.z) < R + (d.r || BODY_R)) hitTarget(d, myHit('slam', 0, 1), { x: d.x, y: 1, z: d.z }, c);
     }
     if (k >= 1) { P.atk = null; P.lastAtkEnd = G.time; P.comboStep = a.step; }
   }
@@ -347,12 +356,7 @@
     const dx = d.x - f.x, dz = d.z - f.z, L = Math.hypot(dx, dz) || 1;
     d.kx += (dx / L) * h.knock; d.kz += (dz / L) * h.knock;
     d.flash = 0.12;
-    NS.fx.popup(h.word, d.x, 2.6, d.z, { color: h.crit ? PAL.red : PAL.ink, size: h.crit ? 1.4 : 1 });
-    NS.fx.popup('-' + Math.round(h.dmg), d.x + 0.6, 1.8, d.z, { color: PAL.red, size: 0.9 });
-    NS.fx.burst(q.x, Math.max(0.6, q.y), q.z, { color: [NS.INKS[h.ink].color, '#ffffff'], n: 8, speed: 5, up: 4, size: 0.12 });
-    Sfx.hit(ME.w.stats.mass, h.crit);
-    G.hitstop = Math.max(G.hitstop, h.crit ? 0.09 : 0.05);
-    NS.fx.shake(h.crit ? 0.25 : 0.12);
+    hitFx(d.x, d.z, h, q, 2.6);
     if (d.hp <= 0) {
       d.dead = true;
       NS.fx.burst(d.x, 1, d.z, { color: ['#f3e3c3', '#ffffff', PAL.ink], n: 24, speed: 8, up: 8, size: 0.18 });
@@ -361,6 +365,15 @@
       removeDummy(d);
       dummies.splice(dummies.indexOf(d), 1);
     }
+  }
+  // 무언가를 때렸을 때의 글자, 파편, 소리, 멈칫
+  function hitFx(x, z, h, q, top) {
+    NS.fx.popup(h.word, x, top || 2.6, z, { color: h.crit ? PAL.red : PAL.ink, size: h.crit ? 1.4 : 1 });
+    NS.fx.popup('-' + Math.round(h.dmg), x + 0.6, (top || 2.6) - 0.8, z, { color: PAL.red, size: h.crit ? 1.2 : 0.9 });
+    NS.fx.burst(q.x, Math.max(0.6, q.y), q.z, { color: [NS.INKS[NS.safeInk(h.ink)].color, '#ffffff'], n: 8, speed: 5, up: 4, size: 0.12 });
+    Sfx.hit(ME.w.stats.mass, h.crit);
+    G.hitstop = Math.max(G.hitstop, h.crit ? 0.09 : 0.05);
+    NS.fx.shake(h.crit ? 0.25 : 0.12);
   }
   let dummyT = 0;
   function updateDummies(dt) {
@@ -468,7 +481,7 @@
   }
 
   function makeStruct(owner, id, kind, pts, color) {
-    const s = { key: owner + ':' + id, owner, id, kind, pts, born: G.time, life: NS.GROUND[kind].life, color, segs: [], dead: false };
+    const s = { key: owner + ':' + id, owner, id, kind, pts, born: G.time, life: NS.GROUND[kind].life * (owner === myId() ? mod('structLife', 1) : 1), color, segs: [], dead: false };
     for (let i = 1; i < pts.length; i++) s.segs.push({ ax: pts[i - 1].x, az: pts[i - 1].z, bx: pts[i].x, bz: pts[i].z });
     if (kind === 'heal') {
       s.c = { x: pts[0].x, z: pts[0].z };
@@ -545,7 +558,7 @@
     const s = makeStruct(myId(), P.sid.toString(36), res.kind, pts, save.color);
     s.enc = enc;
     P.structs.push(s);
-    while (P.structs.filter((x) => !x.dead).length > MAX_STRUCTS) removeStruct(P.structs.find((x) => !x.dead), true);
+    while (P.structs.filter((x) => !x.dead).length > MAX_STRUCTS + mod('structs', 0)) removeStruct(P.structs.find((x) => !x.dead), true);
     P.structs = P.structs.filter((x) => !x.dead);
     NS.fx.popup(NS.GROUND[res.kind].name + '!', s.c.x, 1.8, s.c.z, { color: res.kind === 'heal' ? PAL.green : PAL.ink, size: 1.1 });
     Sfx.build();
@@ -611,7 +624,7 @@
     if (h.ink === 'water') P.slowT = Math.max(P.slowT, 1.5);
     if (h.ink === 'vine') P.rootT = Math.max(P.rootT, 0.6);
     if (h.by) { P.lastHitBy = h.by; P.lastHitAt = G.time; }
-    P.inv = 0.1;
+    P.inv = solo() ? 0.6 : 0.1;
     P.flash = 0.12;
     G.hitstop = Math.max(G.hitstop, 0.06);
     NS.fx.shake(h.crit ? 0.5 : 0.3);
@@ -619,6 +632,7 @@
     NS.fx.popup('-' + Math.round(h.dmg), P.x + 0.6, 1.9, P.z, { color: PAL.red, size: 0.9 });
     NS.fx.burst(P.x, 1, P.z, { color: [save.color, '#ffffff'], n: 8, speed: 5, up: 4, size: 0.12 });
     Sfx.hit(1, h.crit);
+    if (solo()) NS.Solo.onPlayerHit(h);
     if (P.hp <= 0) die();
     publish(true);
     return true;
@@ -637,6 +651,7 @@
   }
   function die() {
     if (P.dead) return;
+    if (solo() && NS.Solo.tryRevive()) return;
     P.dead = true;
     P.hp = 0;
     P.atk = null;
@@ -646,6 +661,7 @@
     NS.fx.splat(P.x, P.z, save.color, 1.3);
     NS.fx.popup('으악!', P.x, 2.6, P.z, { size: 1.8 });
     Sfx.pop();
+    if (solo()) { NS.Solo.onPlayerDeath(); return; }
     const by = nameOf(P.kb);
     feed(by ? `${by} → 나` : '나 · 지워짐');
     const practice = !pvpOn();
@@ -660,14 +676,14 @@
     P.x = x != null ? x : Math.cos(a) * rnd(2, 8);
     P.z = z != null ? z : Math.sin(a) * rnd(2, 8);
     P.vx = P.vz = P.kx = P.kz = 0;
-    P.hp = 100;
+    P.hp = P.maxHp;
     P.dead = false;
     P.inv = 1.2;
     P.burnT = P.slowT = P.rootT = 0;
     P.lastHitBy = null;
     P.kb = null;
     P.atk = null;
-    P.ink = INK_MAX;
+    P.ink = P.inkMax;
     $('dead').hidden = true;
     NS.fx.ring(P.x, P.z, 2, save.color, 0.5);
   }
@@ -989,6 +1005,7 @@
   }
   function openSketchManual() {
     if (NS.Sketch.isOpen()) return;
+    if (solo() && !NS.Solo.canRedraw()) { banner('싸우는 중에는 못 바꿔요', '방을 깨면 스티커 고르는 화면에서 다시 그릴 수 있어요', 1500); return; }
     const ph = G.phase.ph;
     if (G.mode === 'play' && ph === 'fight' && !P.dead && !G.watch) { banner('난투 중에는 못 바꿔요', '쓰러지거나 판이 끝나면 다시 그릴 수 있어요', 1400); return; }
     if (G.mode === 'play' && ph === 'draw') { openPhaseSketch(); return; }
@@ -1079,7 +1096,7 @@
       if (touch.atk) {
         // 터치로 공격할 때는 가장 가까운 상대를 저절로 겨눈다
         let best = null, bd = 7;
-        for (const d of dummies) { const L = Math.hypot(d.x - P.x, d.z - P.z); if (L < bd) { bd = L; best = d; } }
+        for (const d of targets()) { if (d.shot) continue; const L = Math.hypot(d.x - P.x, d.z - P.z); if (L < bd) { bd = L; best = d; } }
         if (pvpOn()) for (const R of aliveRemotes()) { const L = Math.hypot(R.x - P.x, R.z - P.z); if (L < bd) { bd = L; best = R; } }
         if (best) want = Math.atan2(best.x - P.x, best.z - P.z);
         else if (il > 0.2) want = Math.atan2(ix, iz);
@@ -1091,7 +1108,7 @@
     }
     P.slowT -= dt; P.rootT -= dt; P.inv -= dt; P.dashCd -= dt;
     const st = ME.w.stats;
-    let speed = 6.8 - 0.35 * st.mass;
+    let speed = (6.8 - 0.35 * st.mass) * mod('speed', 1);
     if (P.slowT > 0) speed *= 0.55;
     if (P.atk) speed *= P.atk.type === 'hammer' ? 0.35 : 0.6;
     if (P.rootT > 0) speed = 0;
@@ -1127,7 +1144,7 @@
     if (P.dashT > 0) myRig.bodyG.scale.set(1.1, 0.85, 1.1); else myRig.bodyG.scale.set(1, 1, 1);
     hazards(dt);
     if (G.gdraw) addGroundPoint();
-    else P.ink = Math.min(INK_MAX, P.ink + INK_REGEN * dt);
+    else P.ink = Math.min(P.inkMax, P.ink + INK_REGEN * mod('inkRegen', 1) * dt);
   }
 
   function hazards(dt) {
@@ -1158,20 +1175,20 @@
             break;
           }
         }
-      } else if (s.kind === 'heal' && Math.hypot(P.x - s.c.x, P.z - s.c.z) < s.r && P.hp < 100) {
-        P.hp = Math.min(100, P.hp + 10 * dt);
+      } else if (s.kind === 'heal' && Math.hypot(P.x - s.c.x, P.z - s.c.z) < s.r && P.hp < P.maxHp) {
+        P.hp = Math.min(P.maxHp, P.hp + 10 * mod('heal', 1) * dt);
         P.healPopT -= dt;
         if (P.healPopT <= 0) { P.healPopT = 0.5; NS.fx.popup('+', P.x + rnd(-0.5, 0.5), 2.2, P.z, { color: PAL.green, size: 1.1 }); }
       }
     }
-    // 내 가시밭은 허수아비에게도 아프다
+    // 내 가시밭은 허수아비와 적에게도 아프다
     for (const s of P.structs) {
       if (s.kind !== 'spike') continue;
-      for (const d of dummies.slice()) {
+      for (const d of targets().slice()) {
         if ((d.spikeCd || 0) > G.time) continue;
         for (const g of s.segs) {
           const c = NS.closestOnSeg(d.x, d.z, g.ax, g.az, g.bx, g.bz);
-          if (Math.hypot(d.x - c.x, d.z - c.y) < BODY_R + 0.1) { d.spikeCd = G.time + 0.7; hitDummy(d, { dmg: 8, knock: 3, word: '따끔!', crit: false, ink: 'ink' }, { x: d.x, y: 0.5, z: d.z }, { x: c.x, z: c.y }); break; }
+          if (Math.hypot(d.x - c.x, d.z - c.y) < (d.r || BODY_R) + 0.1) { d.spikeCd = G.time + 0.7; hitTarget(d, { dmg: 8 * mod('dmg', 1), knock: 3, word: '따끔!', crit: false, ink: 'ink' }, { x: d.x, y: 0.5, z: d.z }, { x: c.x, z: c.y }); break; }
         }
       }
     }
@@ -1184,9 +1201,11 @@
   }
   function hud() {
     setText($('hp-n'), String(Math.max(0, Math.ceil(P.hp))));
-    $('hp-fill').style.width = clamp(P.hp, 0, 100) + '%';
-    $('hp-fill').className = P.hp > 50 ? '' : P.hp > 25 ? 'mid' : 'low';
-    $('ink-fill').style.width = (P.ink / INK_MAX) * 100 + '%';
+    const hpk = P.hp / P.maxHp;
+    $('hp-fill').style.width = clamp(hpk * 100, 0, 100) + '%';
+    $('hp-fill').className = hpk > 0.5 ? '' : hpk > 0.25 ? 'mid' : 'low';
+    $('ink-fill').style.width = (P.ink / P.inkMax) * 100 + '%';
+    if (solo()) { NS.Solo.hud(); return; }
     const ph = G.phase.ph, now = performance.now();
     const left = Math.max(0, Math.ceil((G.phase.endAt - now) / 1000));
     const stt = G.net ? G.net.status() : 'offline';
@@ -1253,10 +1272,12 @@
       const r = NS.Net.newRoomName();
       history.replaceState(null, '', location.pathname + location.search + '#' + r);
       enterPlay(r);
-      copyLink(true);
+      openInvite(true);
     });
     $('btn-weapon').addEventListener('click', () => { Sfx.unlock(); openSketchManual(); });
-    $('btn-link').addEventListener('click', () => copyLink(false));
+    $('btn-link').addEventListener('click', () => openInvite(false));
+    $('invite-copy').addEventListener('click', () => copyLink(false));
+    $('invite-close').addEventListener('click', () => { $('invite').hidden = true; });
     $('btn-leave').addEventListener('click', leavePlay);
     $('btn-mute').addEventListener('click', toggleMute);
     $('btn-mute').textContent = save.muted ? '소리 켜기' : '소리 끄기';
@@ -1270,8 +1291,30 @@
     else banner('주소창의 링크를 친구에게 보내 주세요', url, 3000);
   }
 
+  // 친구 초대: QR 코드와 링크 (휴대폰 카메라로 QR을 찍으면 바로 같은 방으로 들어온다)
+  function openInvite(fresh) {
+    const url = location.href;
+    setText($('invite-title'), fresh ? '친구 방을 만들었어요!' : '친구 초대');
+    $('invite-url').value = url;
+    setText($('invite-room'), G.net ? `${roomLabel(G.net.room)} · 최대 ${NS.Net.MAX}명` : '');
+    const box = $('qr');
+    box.innerHTML = '';
+    if (typeof window.qrcode === 'function') {
+      try {
+        const qr = window.qrcode(0, 'M');
+        qr.addData(url);
+        qr.make();
+        box.innerHTML = qr.createSvgTag(6, 2);
+      } catch (e) { box.textContent = 'QR을 만들지 못했어요. 링크를 보내 주세요.'; }
+    } else box.textContent = 'QR을 불러오지 못했어요(인터넷 연결 확인). 링크를 보내 주세요.';
+    $('invite').hidden = false;
+    Sfx.ui();
+  }
+
   function enterPlay(room) {
-    if (G.mode === 'play') return;
+    if (G.mode !== 'title') return;
+    P.maxHp = 100;
+    P.inkMax = INK_MAX;
     G.mode = 'play';
     $('title').hidden = true;
     $('hud').hidden = false;
@@ -1303,6 +1346,7 @@
     G.mode = 'title';
     G.watch = false;
     $('hud').hidden = true;
+    $('invite').hidden = true;
     $('dead').hidden = true;
     $('title').hidden = false;
     respawn(0, 0);
@@ -1320,6 +1364,16 @@
       NS.setPose(myRig, NS.idlePose(ME.w.stats.type));
       NS.animateBody(myRig, dt, false, G.time);
       NS.cam.follow(window.innerWidth > 760 ? -2.6 : 0, window.innerWidth > 760 ? -0.5 : 1.6, dt, 'title');
+      return;
+    }
+    if (G.mode === 'solo') {
+      const frozen = NS.Solo.frozen();
+      if (!frozen) updateMe(dt);
+      else { myRig.root.position.set(P.x, 0, P.z); NS.animateBody(myRig, dt, false, G.time); }
+      NS.Solo.update(frozen ? 0 : dt);
+      if (!frozen) updateStructs(dt);
+      NS.cam.follow(P.x, P.z, dt, false);
+      hud();
       return;
     }
     readNet();
@@ -1367,6 +1421,42 @@
   titleUI();
   NS.cam.follow(window.innerWidth > 760 ? -2.6 : 0, window.innerWidth > 760 ? -0.5 : 1.6, 0, 'title');
   requestAnimationFrame(loop);
+  // 혼자 모험(solo.js)이 쓰는 창구
+  NS.core = {
+    G, P, ME, save, persist, myRig, BODY_R, INK_MAX, keys, mouse,
+    targets, takeHit, hurt, banner, feed, makeTag, placeTag, pushOutOfWalls, wallBetween, allStructs,
+    clearMyStructs, endGroundDraw, respawn, setMyWeapon, hitFx, setText,
+    startSolo() {
+      if (G.mode !== 'title') return false;
+      G.mode = 'solo';
+      G.watch = false;
+      $('title').hidden = true;
+      $('hud').hidden = false;
+      $('touch').hidden = !touch.on;
+      document.body.classList.add('solo');
+      clearMyStructs();
+      return true;
+    },
+    endSolo() {
+      clearMyStructs();
+      endGroundDraw();
+      if (NS.Sketch.isOpen()) NS.Sketch.close(false);
+      G.mode = 'title';
+      document.body.classList.remove('solo');
+      $('hud').hidden = true;
+      $('dead').hidden = true;
+      $('title').hidden = false;
+      P.maxHp = 100;
+      P.inkMax = INK_MAX;
+      myRig.fwdG.scale.setScalar(1);
+      respawn(0, 0);
+      NS.zone.set(99, 0);
+    },
+    openSketch(cb) {
+      mouse.down = false;
+      NS.Sketch.open({ strokes: ME.w.strokes, ink: ME.w.ink, onDone: (r) => { if (r) setMyWeapon(r.strokes, r.ink); if (cb) cb(); } });
+    },
+  };
   // 테스트용 창구
   NS.debug = { G, P, ME, remotes, dummies, mouse, beginGroundDraw, endGroundDraw, allStructs, frame: (dt) => { last = performance.now() - (dt || 16); frame(performance.now()); }, enterPlay, leavePlay, setMyWeapon };
 })();

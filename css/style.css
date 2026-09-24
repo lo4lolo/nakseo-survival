@@ -198,3 +198,62 @@ body.touch #hint { display: none; }
   .book h2 { font-size: 26px; }
   #sk-guide li span { font-size: 16px; }
 }
+
+/* ---------- 혼자 모험, 초대 ---------- */
+.green { background: var(--green); }
+.overlay { position: fixed; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(35, 38, 43, .45); }
+.card {
+  width: min(560px, 100%); max-height: 100%; overflow-y: auto; background: var(--paper); border: 3px solid var(--ink);
+  border-radius: 18px; box-shadow: 8px 8px 0 var(--ink); padding: 20px 22px; text-align: center;
+}
+.card h2 { margin: 4px 0 8px; font-size: 34px; color: var(--red); text-shadow: 2px 2px 0 var(--ink); }
+.card .btns { justify-content: center; }
+.story-card small { font-family: var(--pen); font-size: 21px; }
+#story-text { font-family: var(--pen); font-size: 25px; line-height: 1.35; margin: 8px 0 16px; }
+#story-text p { margin: 4px 0; }
+#story-text b { background: var(--hi); font-weight: normal; padding: 0 3px; }
+#story-text .tip { font-family: var(--ui); font-size: 15px; background: #fff; border: 2px dashed #b9b2a2; border-radius: 10px; padding: 6px 10px; margin-top: 12px; }
+.reward-card { width: min(760px, 100%); }
+#reward-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 12px 0; }
+.sticker-card {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 10px 14px;
+  background: #fff; border: 3px solid var(--ink); border-radius: 16px; box-shadow: 4px 4px 0 var(--ink); transition: transform .1s;
+}
+.sticker-card:hover { transform: translateY(-4px) rotate(-1deg); background: var(--hi); }
+.sticker-card .ic { font-size: 44px; line-height: 1; }
+.sticker-card b { font-size: 19px; }
+.sticker-card small { font-size: 14px; line-height: 1.35; opacity: .85; }
+.sticker-card em { position: absolute; top: 6px; right: 8px; font-style: normal; font-size: 11px; opacity: .6; }
+.sticker-card.rare { background: #eafbe7; border-color: var(--green); }
+.sticker-card.rest { background: #fff3e0; }
+#result-stats { list-style: none; padding: 0; margin: 12px auto; max-width: 380px; text-align: left; }
+#result-stats li { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px dashed #cfc7b4; padding: 5px 0; font-size: 16px; }
+#result-stickers { font-size: 28px; margin-bottom: 12px; }
+#result-stickers span { margin: 0 3px; }
+.pause-card { width: min(380px, 100%); }
+#qr { width: min(260px, 70vw); margin: 10px auto; background: #fff; border: 3px solid var(--ink); border-radius: 12px; padding: 6px; }
+#qr svg, #qr img { display: block; width: 100%; height: auto; }
+#invite-url { width: 100%; font-family: var(--ui); font-size: 14px; padding: 6px 8px; border: 2px solid var(--ink); border-radius: 9px; background: #fff; margin-bottom: 10px; user-select: all; }
+#bossbar { position: absolute; top: 98px; left: 50%; transform: translateX(-50%); width: min(520px, 80vw); text-align: center; }
+#bossbar b { display: block; font-size: 22px; color: #fff; -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill; }
+#bossbar i { display: block; height: 18px; background: #fff; border: 3px solid var(--ink); border-radius: 9px; overflow: hidden; box-shadow: 3px 3px 0 var(--ink); }
+#bossbar u { display: block; height: 100%; background: var(--red); transition: width .15s; }
+#bossbar small { font-size: 12px; }
+#stickers { display: flex; flex-wrap: wrap; gap: 2px; font-size: 20px; }
+#stickers span { position: relative; background: rgba(251, 248, 239, .9); border-radius: 8px; padding: 0 2px; }
+#stickers i { position: absolute; right: -2px; bottom: -4px; font-style: normal; font-size: 11px; background: var(--ink); color: #fff; border-radius: 6px; padding: 0 3px; }
+#solo-btns { position: absolute; right: 14px; top: 14px; display: none; }
+body.solo #solo-btns { display: block; }
+body.solo #side, body.solo #feed { display: none; }
+.tag.mob b { display: none; }
+.tag.mob i { width: 44px; height: 7px; }
+@media (max-width: 760px) {
+  #reward-cards { grid-template-columns: 1fr; }
+  .sticker-card { flex-direction: row; text-align: left; padding: 10px; }
+  .sticker-card .ic { font-size: 34px; }
+  .sticker-card b { white-space: nowrap; }
+  #bossbar { top: 64px; }
+  body.solo #solo-btns { top: auto; bottom: 240px; right: 10px; }
+  .card h2 { font-size: 27px; }
+  #story-text { font-size: 21px; }
+}
